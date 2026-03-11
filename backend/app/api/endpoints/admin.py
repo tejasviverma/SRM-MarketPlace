@@ -120,6 +120,32 @@ async def takedown_listing(
 
 # --- 👤 USER MODERATION ---
 
+# 🌟 NEW ENDPOINT: Search User by Email
+@router.get("/users/search", tags=["Admin - Users"])
+async def search_user_by_email(
+    email: str, 
+    admin: dict = Depends(get_admin_user)
+):
+    """
+    Allows the Admin to search for a user by email to get their UID.
+    Used for promoting admins, banning users, or checking profiles.
+    """
+    try:
+        # Query Firestore for the exact email
+        users = db.collection("users").where("email", "==", email).stream()
+        
+        results = [{"uid": user.id, **user.to_dict()} for user in users]
+        
+        if not results:
+            raise HTTPException(status_code=404, detail="No user found with that email.")
+            
+        return {"data": results}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.put("/users/{uid}/role", tags=["Admin - Users"])
 async def set_user_role(
     uid: str, 
