@@ -3,7 +3,7 @@ import requests
 FIREBASE_WEB_API_KEY = "AIzaSyDdIBo7XwWhRVnjkUTqHWjxJXNe6a_mPcs"
 
 # Change this email whenever you want to test a different person!
-TEST_EMAIL = "shop@gmail.com"  
+TEST_EMAIL = "2342himansh11a2@gmail.com"  
 TEST_PASSWORD = "StrongPassword123!"
 
 print(f"Fetching token for {TEST_EMAIL}...")

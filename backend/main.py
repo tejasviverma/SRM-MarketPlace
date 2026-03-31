@@ -7,13 +7,14 @@ from app.core.config import settings
 # 🛡️ Import ALL your powerful Bouncers
 from app.core.security import (
     get_current_user, 
-    get_srm_student, 
+    get_verified_student, 
     get_verified_shop, 
     get_admin_user
 ) 
 
 # Import all of your beautiful routers
 from app.api.endpoints import products, upload, shops, chat, users, services, admin , support
+
 
 
 # --- SENTRY INITIALIZATION ---
@@ -28,9 +29,15 @@ else:
 
 app = FastAPI(title="SRM Campus Economy API", version="1.0.0")
 
+origins = [
+    settings.FRONTEND_URL.rstrip("/"),      # Trusted URL from .env
+    "http://localhost:3000",    # Standard Localhost
+    "http://127.0.0.1:3000",    # Alternative Localhost
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,7 +48,7 @@ app.add_middleware(
 app.include_router(products.router, prefix="/api/products", tags=["Products"])
 app.include_router(upload.router, prefix="/api/upload", tags=["Storage"])
 app.include_router(shops.router, prefix="/api/shops", tags=["Shops"])
-app.include_router(chat.router, prefix="/api/chat", tags=["Bidding & Chat"])
+app.include_router(chat.router, prefix="/api/chat", tags=["Chat & Bidding"])
 app.include_router(users.router, prefix="/api/users", tags=["User Management"])
 app.include_router(services.router, prefix="/api/services", tags=["Services"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin Dashboard"]) 
@@ -66,7 +73,7 @@ async def test_database():
 # --- 📊 ROLE-SPECIFIC DASHBOARDS ---
 
 @app.get("/api/dashboard/student", tags=["Dashboards"])
-async def get_student_dashboard(student: dict = Depends(get_srm_student)):
+async def get_student_dashboard(student: dict = Depends(get_verified_student)):
     """Locked to @srmist.edu.in users only."""
     return {
         "role": "student",

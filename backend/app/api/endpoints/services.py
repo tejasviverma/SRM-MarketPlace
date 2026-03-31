@@ -3,7 +3,7 @@ from typing import Optional
 from google.cloud import firestore
 
 from app.core.firebase import db
-from app.core.security import get_srm_student, get_marketplace_user
+from app.core.security import get_verified_student, get_marketplace_user # 🌟 Updated Import
 from app.models.listing import ListingCreate, ListingStatus, ListingType 
 
 router = APIRouter()
@@ -13,7 +13,7 @@ async def get_live_services(
     category: Optional[str] = Query(None, description="e.g., tutoring, laundry, freelance"),
     limit: int = Query(15, le=30),
     cursor: Optional[str] = Query(None),
-    user: dict = Depends(get_marketplace_user) # 🛡️ SHARED DOOR: Both students and shops can view!
+    user: dict = Depends(get_marketplace_user) # 🛡️ SHARED DOOR: Guests, students and shops can view!
 ):
     """
     Fetches a live feed of ONLY services, using strict cursor-based pagination.
@@ -56,7 +56,7 @@ async def get_live_services(
 @router.post("/create", response_model=dict, tags=["Services"])
 async def create_service_ad(
     listing: ListingCreate, 
-    user: dict = Depends(get_srm_student) # 🛡️ STRICT DOOR: Only students can post here
+    user: dict = Depends(get_verified_student) # 🔒 STRICT DOOR: Only verified students can post here
 ):
     """
     Allows a verified student to post a service they are offering.
@@ -64,7 +64,6 @@ async def create_service_ad(
     try:
         listing_data = listing.model_dump()
         
-        # FIXED: Changed from student.get("uid") to user.get("uid") to prevent a crash
         listing_data["owner_id"] = user.get("uid") 
         listing_data["status"] = ListingStatus.ACTIVE
         

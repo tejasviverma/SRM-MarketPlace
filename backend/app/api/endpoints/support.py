@@ -1,65 +1,82 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from typing import Optional
 from google.cloud import firestore
 
 from app.core.firebase import db
 from app.core.security import get_current_user, get_admin_user
+from app.models.support import TicketStatus, TicketCreate, AdminTicketReply ,WarnUserRequest
 
 router = APIRouter()
-
-# --- PYDANTIC MODELS ---
-class TicketCreate(BaseModel):
-    subject: str
-    description: str
-
-class AdminTicketReply(BaseModel):
-    status: str # e.g., "open", "in_progress", "resolved", "closed"
-    admin_response: str
-
 
 # ==========================================
 # 🙋‍♂️ USER ROUTES (Anyone logged in)
 # ==========================================
 
-@router.post("/create", tags=["Support Tickets"])
-async def create_support_ticket(
-    ticket: TicketCreate, 
-    user: dict = Depends(get_current_user) # 🛡️ Base Door: Anyone can ask for help
-):
-    """Allows any logged-in user (Student, Shop, or Guest) to raise an issue."""
+@router.post("/create", tags=["Support & Admin"])
+async def create_support_ticket(ticket: TicketCreate, user: dict = Depends(get_current_user)):
     try:
         uid = user.get("uid")
         
-        ticket_data = ticket.model_dump()
-        ticket_data["user_id"] = uid
-        ticket_data["user_email"] = user.get("email") # Helpful for the admin to see
-        ticket_data["status"] = "open"
-        ticket_data["admin_response"] = None
-        ticket_data["created_at"] = firestore.SERVER_TIMESTAMP
-        ticket_data["updated_at"] = firestore.SERVER_TIMESTAMP
+        # 1. Create the Chat Room First
+        chat_ref = db.collection("chat_rooms").document()
+        chat_room_id = chat_ref.id
         
-        # Save to a completely isolated collection
-        doc_ref = db.collection("support_tickets").document()
-        doc_ref.set(ticket_data)
+        chat_ref.set({
+            "id": chat_room_id,
+            "listing_id": ticket.reference_id or "system_support",
+            "buyer_id": uid,
+            "seller_id": "ADMIN_TEAM",
+            "subject": ticket.subject,
+            "last_message": ticket.description,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+            "is_ticket": True
+        })
         
-        return {"message": "Support ticket submitted successfully!", "ticket_id": doc_ref.id}
+        # Add the user's description as the first message
+        chat_ref.collection("messages").add({
+            "sender_id": uid,
+            "text": ticket.description,
+            "is_bid": False,
+            "created_at": firestore.SERVER_TIMESTAMP 
+        })
+
+        # 2. Create the Official Ticket Record
+        ticket_ref = db.collection("tickets").document()
+        ticket_ref.set({
+            "id": ticket_ref.id,
+            "owner_id": uid,
+            "user_email": user.get("email"), 
+            "subject": ticket.subject,
+            "description": ticket.description, 
+            "reference_id": ticket.reference_id,
+            "reference_type": ticket.reference_type,
+            "status": TicketStatus.OPEN.value,
+            "chat_room_id": chat_room_id,
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
+
+        return {"message": "Support ticket created successfully!", "ticket_id": ticket_ref.id, "chat_room_id": chat_room_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@router.get("/my-tickets", tags=["Support Tickets"])
+# 🚨 FIXED: Added the missing '@' symbol here!
+@router.get("/my-tickets", tags=["Support & Admin"])
 async def get_my_tickets(user: dict = Depends(get_current_user)):
-    """Allows a user to view the status and admin replies for their own tickets."""
     try:
         uid = user.get("uid")
+        tickets_query = db.collection("tickets").where("owner_id", "==", uid).stream()
         
-        # Only fetch tickets that belong to this specific user
-        tickets_query = db.collection("support_tickets").where("user_id", "==", uid).order_by("created_at", direction=firestore.Query.DESCENDING).stream()
-        
-        results = [{"id": doc.id, **doc.to_dict()} for doc in tickets_query]
+        results = []
+        for doc in tickets_query:
+            data = doc.to_dict()
+            # FIX: Convert datetime to string so FastAPI doesn't crash
+            if "created_at" in data and data["created_at"]:
+                data["created_at"] = data["created_at"].isoformat() if hasattr(data["created_at"], 'isoformat') else str(data["created_at"])
+            results.append({"id": doc.id, **data})
+            
+        results.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
         return {"data": results}
     except Exception as e:
+        print("Error fetching tickets:", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -67,45 +84,119 @@ async def get_my_tickets(user: dict = Depends(get_current_user)):
 # 👑 ADMIN ROUTES (Strictly God Mode)
 # ==========================================
 
-@router.get("/admin/all", tags=["Admin Control Panel"])
-async def get_all_campus_tickets(
-    status: Optional[str] = None, 
-    admin: dict = Depends(get_admin_user) # 🛡️ STRICT DOOR: Admins ONLY!
-):
-    """Allows an admin to view all support tickets, optionally filtering by status."""
+@router.get("/admin/all", tags=["Support & Admin"])
+async def get_all_campus_tickets(admin: dict = Depends(get_admin_user)):
     try:
-        query = db.collection("support_tickets").order_by("created_at", direction=firestore.Query.DESCENDING)
-        
-        if status:
-            query = query.where("status", "==", status)
+        tickets_query = db.collection("tickets").where("status", "==", TicketStatus.OPEN.value).stream()
+        results = []
+        for doc in tickets_query:
+            data = doc.to_dict()
+            if "created_at" in data and data["created_at"]:
+                data["created_at"] = data["created_at"].isoformat() if hasattr(data["created_at"], 'isoformat') else str(data["created_at"])
+            results.append({"id": doc.id, **data})
             
-        docs = query.stream()
-        return {"data": [{"id": doc.id, **doc.to_dict()} for doc in docs]}
+        results.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
+        return {"data": results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/admin/{ticket_id}/reply", tags=["Admin Control Panel"])
-async def reply_to_ticket(
-    ticket_id: str, 
-    reply: AdminTicketReply, 
-    admin: dict = Depends(get_admin_user) # 🛡️ STRICT DOOR: Admins ONLY!
-):
-    """Allows an admin to update a ticket's status and send a message back to the user."""
+@router.post("/admin/{ticket_id}/reply", tags=["Support & Admin"])
+async def admin_reply_to_ticket(ticket_id: str, reply: AdminTicketReply, admin: dict = Depends(get_admin_user)):
     try:
-        ticket_ref = db.collection("support_tickets").document(ticket_id)
+        admin_id = admin.get("uid")
+        ticket_ref = db.collection("tickets").document(ticket_id)
+        ticket_doc = ticket_ref.get()
         
-        if not ticket_ref.get().exists:
+        if not ticket_doc.exists:
             raise HTTPException(status_code=404, detail="Ticket not found.")
             
-        # Update the ticket with the admin's response and the new status
+        ticket_data = ticket_doc.to_dict()
+        chat_room_id = ticket_data.get("chat_room_id")
+        
+        # Update the actual Ticket document so the /support page can see it
         ticket_ref.update({
             "status": reply.status,
-            "admin_response": reply.admin_response,
-            "updated_at": firestore.SERVER_TIMESTAMP,
-            "resolved_by": admin.get("email") # Keep track of which admin helped
+            "admin_response": reply.admin_response
         })
         
-        return {"message": f"Ticket {ticket_id} marked as {reply.status}."}
+        # Inject the message into the chat room
+        chat_ref = db.collection("chat_rooms").document(chat_room_id)
+        chat_ref.collection("messages").add({
+            "sender_id": admin_id,
+            "text": f"👨‍💻 Admin Support: {reply.admin_response}",
+            "is_bid": False,
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
+        
+        chat_ref.update({
+            "last_message": reply.admin_response, 
+            "status": reply.status,
+            "updated_at": firestore.SERVER_TIMESTAMP
+        })
+        
+        return {"message": "Reply sent successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/admin/{ticket_id}/resolve", tags=["Support & Admin"])
+async def resolve_ticket(ticket_id: str, admin: dict = Depends(get_admin_user)):
+    try:
+        # Check chat_rooms first
+        room_ref = db.collection("chat_rooms").document(ticket_id)
+        
+        if room_ref.get().exists:
+            room_ref.update({
+                "status": TicketStatus.RESOLVED.value,
+                "updated_at": firestore.SERVER_TIMESTAMP
+            })
+            tickets = db.collection("tickets").where("chat_room_id", "==", ticket_id).stream()
+            for t in tickets:
+                t.reference.update({"status": TicketStatus.RESOLVED.value})
+                
+        else:
+            # Fallback if the ID was the ticket ID instead
+            ticket_ref = db.collection("tickets").document(ticket_id)
+            if ticket_ref.get().exists:
+                ticket_ref.update({"status": TicketStatus.RESOLVED.value})
+                chat_id = ticket_ref.get().to_dict().get("chat_room_id")
+                if chat_id:
+                    db.collection("chat_rooms").document(chat_id).update({"status": TicketStatus.RESOLVED.value})
+
+        return {"message": "Ticket resolved and closed."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.post("/admin/warn/{target_uid}", tags=["Support & Admin"])
+async def warn_user(target_uid: str, req: WarnUserRequest, admin: dict = Depends(get_admin_user)):
+    """Admin initiates a Warning ticket directly into a user's inbox."""
+    try:
+        # 1. Create the Chat Room
+        chat_ref = db.collection("chat_rooms").document()
+        chat_room_id = chat_ref.id
+        
+        chat_ref.set({
+            "id": chat_room_id,
+            "listing_id": "system_warning",
+            "buyer_id": target_uid, # The User receiving the warning
+            "seller_id": "ADMIN_TEAM", # Admin is the sender
+            "subject": f"⚠️ WARNING: {req.subject}",
+            "last_message": req.message,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+            "is_ticket": True,
+            "status": TicketStatus.OPEN.value
+        })
+        
+        # 2. Add Admin's Warning Message
+        chat_ref.collection("messages").add({
+            "sender_id": admin.get("uid"),
+            "text": req.message,
+            "is_bid": False,
+            "created_at": firestore.SERVER_TIMESTAMP 
+        })
+
+        return {"message": "Warning sent to user.", "chat_room_id": chat_room_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

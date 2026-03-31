@@ -9,11 +9,17 @@ class Settings(BaseSettings):
     """Master configuration object."""
     PROJECT_NAME: str = "SRM Campus Economy API"
     ENVIRONMENT: str = "development"
+
+    FRONTEND_URL: str = "http://localhost:3000"
     
     FIREBASE_CREDENTIALS_PATH: str = "serviceAccountKey.json"
     FIREBASE_STORAGE_BUCKET: str 
     SECRET_KEY: str = "8eY1vwLMBtkI0KLwwrQQFMZZLdAMjEdDRThtRu5JOmo"
     SENTRY_DSN: str | None = None
+
+    # 🚨 ADD THESE TWO LINES:
+    gmail_address: str
+    gmail_app_password: str
 
     class Config:
         env_file = str(BASE_DIR / ".env") 
