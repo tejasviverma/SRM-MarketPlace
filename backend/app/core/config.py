@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # 🚨 ADD THESE TWO LINES:
     gmail_address: str
-    gmail_app_password: str
+    brevo_api_key: str
 
     class Config:
         env_file = str(BASE_DIR / ".env") 
