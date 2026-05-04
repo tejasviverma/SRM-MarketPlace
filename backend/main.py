@@ -13,7 +13,7 @@ from app.core.security import (
 ) 
 
 # Import all of your beautiful routers
-from app.api.endpoints import products, upload, shops, chat, users, services, admin , support
+from app.api.endpoints import products, upload, shops, chat, users, services, admin , support , pools
 
 
 
@@ -53,6 +53,7 @@ app.include_router(users.router, prefix="/api/users", tags=["User Management"])
 app.include_router(services.router, prefix="/api/services", tags=["Services"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin Dashboard"]) 
 app.include_router(support.router, prefix="/api/support", tags=["Support & Admin"])
+app.include_router(pools.router, prefix="/api/pools", tags=["Cart Pools"])
 
 
 # --- SYSTEM ROUTES ---
