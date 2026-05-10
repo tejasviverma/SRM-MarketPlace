@@ -17,12 +17,16 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "8eY1vwLMBtkI0KLwwrQQFMZZLdAMjEdDRThtRu5JOmo"
     SENTRY_DSN: str | None = None
 
-    # 🚨 ADD THESE TWO LINES:
     gmail_address: str
     brevo_api_key: str
 
+    # 🚨 ADDED THIS LINE TO FIX THE PYDANTIC ERROR:
+    REDIS_URL: str = "redis://localhost:6379"
+
     class Config:
         env_file = str(BASE_DIR / ".env") 
+        # Optional safeguard: This tells Pydantic to ignore extra variables in the .env instead of crashing
+        extra = "ignore" 
 
 @lru_cache()
 def get_settings():

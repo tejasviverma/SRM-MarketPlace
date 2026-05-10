@@ -1,5 +1,8 @@
+import os
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from arq import create_pool
+from arq.connections import RedisSettings
 from app.core.firebase import db
 import sentry_sdk
 from app.core.config import settings
@@ -14,8 +17,6 @@ from app.core.security import (
 
 # Import all of your beautiful routers
 from app.api.endpoints import products, upload, shops, chat, users, services, admin , support , pools
-
-
 
 # --- SENTRY INITIALIZATION ---
 if settings.SENTRY_DSN:
@@ -42,6 +43,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# 🚨 REDIS QUEUE INITIALIZATION 🚨
+@app.on_event("startup")
+async def startup_event():
+    """Connect FastAPI to Redis so routes can drop jobs into the queue instantly."""
+    try:
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        app.state.redis = await create_pool(RedisSettings.from_dsn(redis_url))
+        print(f"✅ Successfully connected to Redis Queue at: {redis_url}")
+    except Exception as e:
+        print(f"❌ Failed to connect to Redis: {e}")
 
 
 # --- ROUTER REGISTRATION ---
