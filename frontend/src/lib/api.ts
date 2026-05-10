@@ -840,8 +840,13 @@ export async function restoreShopProfile() {
 // GROUP ORDERS (CART POOLING) APIs
 // ==========================================
 
+// ==========================================
+// GROUP ORDERS (CART POOLING) APIs
+// ==========================================
+
 export const getActiveGroupOrders = async () => {
-  const res = await authenticatedFetch(`${API_URL}/api/pools`, {
+  // 🚨 ADDED TRAILING SLASH: /api/pools/
+  const res = await authenticatedFetch(`${API_URL}/api/pools/`, {
     method: 'GET',
   });
   if (!res.ok) {
@@ -852,7 +857,8 @@ export const getActiveGroupOrders = async () => {
 };
 
 export const createGroupOrder = async (orderData: { app_name: string, pickup_location: string, contact_number: string, expires_in_minutes: number, upi_id: string }) => {
-  const res = await authenticatedFetch(`${API_URL}/api/pools`, {
+  // 🚨 ADDED TRAILING SLASH: /api/pools/
+  const res = await authenticatedFetch(`${API_URL}/api/pools/`, {
     method: 'POST',
     body: JSON.stringify(orderData)
   });
@@ -864,7 +870,8 @@ export const joinGroupOrder = async (
   poolId: string, 
   payload: { contact_number: string, block: string, items: { item_name: string, quantity: number, estimated_price: number }[] }
 ) => {
-  const res = await authenticatedFetch(`${API_URL}/api/pools/${poolId}/join`, {
+  // 🚨 ADDED TRAILING SLASH
+  const res = await authenticatedFetch(`${API_URL}/api/pools/${poolId}/join/`, {
     method: 'POST',
     body: JSON.stringify(payload)
   });
@@ -877,7 +884,8 @@ export const joinGroupOrder = async (
 };
 
 export const updateGroupOrderStatus = async (poolId: string, status: 'locked' | 'delivered' | 'cancelled', deliveryFee: number = 0) => {
-  const res = await authenticatedFetch(`${API_URL}/api/pools/${poolId}/status`, {
+  // 🚨 ADDED TRAILING SLASH
+  const res = await authenticatedFetch(`${API_URL}/api/pools/${poolId}/status/`, {
     method: 'PUT',
     body: JSON.stringify({ status, delivery_fee: deliveryFee })
   });
@@ -885,9 +893,9 @@ export const updateGroupOrderStatus = async (poolId: string, status: 'locked' | 
   return res.json();
 };
 
-
 export const kickParticipant = async (poolId: string, userId: string) => {
-  const res = await authenticatedFetch(`${API_URL}/api/pools/${poolId}/participants/${userId}`, {
+  // 🚨 ADDED TRAILING SLASH
+  const res = await authenticatedFetch(`${API_URL}/api/pools/${poolId}/participants/${userId}/`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -897,9 +905,9 @@ export const kickParticipant = async (poolId: string, userId: string) => {
   return res.json();
 };    
 
-
 export const settleGroupOrder = async (poolId: string) => {
-  const res = await authenticatedFetch(`${API_URL}/api/pools/${poolId}/settle`, {
+  // 🚨 ADDED TRAILING SLASH
+  const res = await authenticatedFetch(`${API_URL}/api/pools/${poolId}/settle/`, {
     method: 'POST',
   });
   if (!res.ok) {
