@@ -19,23 +19,24 @@ export default function LoginPage() {
   
   // UI State
   const [isSignUp, setIsSignUp] = useState(false);
-  const [isResetMode, setIsResetMode] = useState(false); // 🚨 NEW: Controls the Forgot Password View
+  const [isResetMode, setIsResetMode] = useState(false); 
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  
+  // 🚨 SMART PROMPT STATE
+  const [suggestPasswordSet, setSuggestPasswordSet] = useState(false);
 
   // Form State
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  // 🚨 SMART REDIRECT: If already logged in, send them away!
   useEffect(() => {
     if (!isAuthLoading && profile && profile.role !== 'guest') {
       router.replace('/'); 
     }
   }, [profile, isAuthLoading, router]);
 
-  // --- CORE SYNC & ROUTING LOGIC ---
   const handleBackendSyncAndRoute = async () => {
     const data = await syncUserWithBackend();
     setProfile(data.profile);
@@ -58,11 +59,11 @@ export default function LoginPage() {
     }
   };
 
-  // --- OAUTH HANDLERS ---
   const handleGoogleLogin = async () => {
     try {
       setIsAuthenticating(true);
       setError(null);
+      setSuggestPasswordSet(false);
       await signInWithPopup(auth, googleProvider);
       await handleBackendSyncAndRoute();
     } catch (err: any) {
@@ -76,6 +77,7 @@ export default function LoginPage() {
     try {
       setIsAuthenticating(true);
       setError(null);
+      setSuggestPasswordSet(false);
       await signInWithPopup(auth, githubProvider);
       await handleBackendSyncAndRoute();
     } catch (err: any) {
@@ -85,35 +87,33 @@ export default function LoginPage() {
     }
   };
 
-  // --- EMAIL & PASSWORD HANDLER ---
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccessMsg(null);
+    setSuggestPasswordSet(false);
 
     if (!email) {
       setError("Please enter your email address.");
       return;
     }
 
-    // 🚨 NEW: HANDLE PASSWORD RESET
     if (isResetMode) {
       try {
         setIsAuthenticating(true);
         await sendPasswordResetEmail(auth, email);
         setSuccessMsg(`Reset link sent! Check your inbox for ${email}.`);
-        setIsResetMode(false); // Go back to login view so they can sign in
+        setIsResetMode(false); 
         setPassword('');
       } catch (err: any) {
-        if (err.code === 'auth/user-not-found') setError("No account found with this email.");
-        else setError("Failed to send reset link. Please try again.");
+        // Firebase groups unfound users for security
+        setError("Failed to send reset link. Check the email and try again.");
       } finally {
         setIsAuthenticating(false);
       }
       return;
     }
 
-    // NORMAL LOGIN / SIGNUP
     if (!password) {
       setError("Please enter your password.");
       return;
@@ -130,11 +130,23 @@ export default function LoginPage() {
       
       await handleBackendSyncAndRoute();
     } catch (err: any) {
-      console.error(err);
-      if (err.code === 'auth/email-already-in-use') setError("An account with this email already exists.");
-      else if (err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') setError("Invalid email or password.");
-      else if (err.code === 'auth/weak-password') setError("Password should be at least 6 characters.");
-      else setError("Authentication failed. Please try again.");
+      console.error("Auth Error:", err.code);
+      
+      // 🚨 THE FIX: Catch all credential failures (wrong password, no password, or unfound user)
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found') {
+        // Instead of a red generic error, we trigger the helpful blue prompt!
+        setSuggestPasswordSet(true);
+        setError(null);
+      } 
+      else if (err.code === 'auth/email-already-in-use') {
+        setError("An account with this email already exists. Please log in.");
+      }
+      else if (err.code === 'auth/weak-password') {
+        setError("Password should be at least 6 characters.");
+      }
+      else {
+        setError("Authentication failed. Please try again.");
+      }
       
       setIsAuthenticating(false);
     }
@@ -159,7 +171,6 @@ export default function LoginPage() {
 
       <div className="max-w-md w-full bg-white p-8 sm:p-10 rounded-3xl shadow-xl border border-gray-100 overflow-hidden transition-all duration-300">
         
-        {/* Header */}
         <div className="text-center mb-8">
           <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white font-black text-2xl mx-auto mb-4 shadow-sm">
             S
@@ -174,19 +185,36 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Alerts */}
-        {error && (
+        {error && !suggestPasswordSet && (
           <div className="mb-6 p-3 rounded-xl bg-red-50 text-red-600 text-sm font-bold text-center border border-red-100 animate-fade-in-up">
             {error}
           </div>
         )}
+        
         {successMsg && (
           <div className="mb-6 p-3 rounded-xl bg-green-50 text-green-700 text-sm font-bold text-center border border-green-100 animate-fade-in-up">
             {successMsg}
           </div>
         )}
 
-        {/* 🚨 THE TRANSFORMING VIEW: Hide OAuth if in Reset Mode */}
+        {/* 🚨 THE UPDATED SMART UX PROMPT */}
+        {suggestPasswordSet && !isResetMode && (
+          <div className="mb-6 p-4 rounded-xl bg-blue-50 border border-blue-100 animate-fade-in-up text-center">
+            <p className="text-sm text-blue-800 font-medium mb-3">
+              We couldn't verify that password. If you originally signed up with Google, you need to set a manual password to log in this way.
+            </p>
+            <button 
+              onClick={() => {
+                setSuggestPasswordSet(false);
+                setIsResetMode(true);
+              }}
+              className="px-5 py-2.5 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 transition shadow-sm"
+            >
+              Set / Reset Password
+            </button>
+          </div>
+        )}
+
         {!isResetMode && (
           <>
             <div className="space-y-3 mb-6 animate-fade-in-up">
@@ -221,7 +249,6 @@ export default function LoginPage() {
           </>
         )}
 
-        {/* Email/Password Form */}
         <form onSubmit={handleEmailSubmit} className="space-y-4 animate-fade-in-up">
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Email Address</label>
@@ -232,17 +259,15 @@ export default function LoginPage() {
             />
           </div>
           
-          {/* Hide password field if we are resetting */}
           {!isResetMode && (
             <div>
               <div className="flex justify-between items-center mb-1.5">
                 <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">Password</label>
                 
-                {/* 🚨 THE FORGOT PASSWORD LINK */}
                 {!isSignUp && (
                   <button 
                     type="button" 
-                    onClick={() => { setIsResetMode(true); setError(null); setSuccessMsg(null); }} 
+                    onClick={() => { setIsResetMode(true); setError(null); setSuccessMsg(null); setSuggestPasswordSet(false); }} 
                     className="text-[11px] font-bold text-blue-600 hover:text-blue-800 transition"
                   >
                     Forgot Password?
@@ -268,7 +293,6 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Form Footer Links */}
         <div className="mt-8 text-center border-t border-gray-100 pt-6">
           {isResetMode ? (
             <button 
@@ -283,7 +307,7 @@ export default function LoginPage() {
               {isSignUp ? "Already have an account?" : "Don't have an account yet?"}
               <button 
                 type="button"
-                onClick={() => { setIsSignUp(!isSignUp); setError(null); setSuccessMsg(null); }}
+                onClick={() => { setIsSignUp(!isSignUp); setError(null); setSuccessMsg(null); setSuggestPasswordSet(false); }}
                 className="ml-2 text-blue-600 font-bold hover:text-blue-700 focus:outline-none transition-colors"
               >
                 {isSignUp ? 'Log in' : 'Sign up'}
